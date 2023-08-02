@@ -15,22 +15,12 @@ Thoughts after the first draft:
 import pandas as pd
 import numpy as np
 
+##### STEP 0: Execute another python script
+with open('08022023_countrycodes_enhance.py') as script:
+    exec(script.read())
+
 ##### STEP 1: HOW MANY COUNTRIES/REGIONS?
-
 countries = pd.read_csv('countries.csv')
-
-ScheduleC_raw = pd.read_csv("country.txt", delimiter = "\t",\
-                            skiprows = [0, 1, 2, 3, 4, 245, 246, 247, 248], names = ['V'])
-# reshape data by spliting the column by |
-ScheduleC = ScheduleC_raw['V'].str.split('|', expand = True).\
-rename(columns = {0:'code', 1:'name', 2:'iso'})
-# remove potential leading and trailing spaces in a dataframe
-ScheduleC = ScheduleC.applymap(lambda x: x.strip() if isinstance(x, str) else x)
-# delete the raw data since the cleaned & reshaped dataframe is ready
-del ScheduleC_raw
-# set to uppercase to be consistent with the other dataset
-ScheduleC['name'] = ScheduleC['name'].str.upper()
-
 
 ###### STEP 2 ######
 ### 2(a) Exact Matches ###
@@ -102,8 +92,8 @@ all_matches = pd.concat([pd.DataFrame(np.repeat(countries_short[['country']].val
 # 4.Optional: reorder the columns
 
 # More dataframe editions/enhancements
-# After observing the results, I decided to set the cutoff at 0.5
-all_matches = all_matches[all_matches['cosine_similarity'] > 0.5]
+# After observing the results, I decided to set the cutoff at 0.65
+all_matches = all_matches[all_matches['cosine_similarity'] > 0.65]
 all_matches = all_matches.rename(columns = {0:'query', 'name':'match'})
 all_matches = all_matches[['query','match','code','iso','cosine_similarity','rank']]
 all_matches = all_matches.reset_index(drop = True)
@@ -111,6 +101,9 @@ all_matches = all_matches.reset_index(drop = True)
 # Continue filtering the matches by keeping match_1 only
 best_match = all_matches[all_matches['rank'] == 'match_1']
 best_match = best_match[['query','code','iso']].rename(columns = {'query':'country'})
+
+### reduced all_matches w/ suggested edition column
+suggested_names_cos = (all_matches[all_matches['rank'] == 'match_1'])[['query','match','code','iso']]
 
 # Concatenate exact and cosine-similarity matches
 final_matches = pd.concat([exact_matches, best_match]).sort_values(by = 'country').reset_index(drop = True)
@@ -127,13 +120,31 @@ df_unused_ScheduleC = ScheduleC[ScheduleC['name'].isin(unused_ScheduleC)]
 from thefuzz import process
 print(unmatched)
 
-## It's better to place alternative terms in as a separate item
-[item.split('(')[-1].replace(')','') for item in unused_ScheduleC if '(' in item]
-
 fuzz_results = [None]*len(unmatched)
-for i in range(len(unmatched)):
-    fuzz_results[i] = process.extract(unmatched[i], pd.Series(unused_ScheduleC), limit = 4)
-
 print(fuzz_results)
+results_dfs = [None]*len(unmatched)
+for i in range(len(unmatched)):
+    fuzz_results[i] = process.extract(unmatched[i], pd.Series(ScheduleC['name']), limit = 4)
+    results_dfs[i] = pd.DataFrame(fuzz_results[i])[[0,1]]
 
-## TBC
+fuzz_df = pd.concat([df for df in results_dfs]).\
+    rename(columns = {0:'name',1:'score'})
+fuzz_df['query'] = np.repeat(unmatched,4)
+results_df = fuzz_df.merge(ScheduleC, on = 'name', how = 'left')
+results_df = results_df[['query','name','code','iso','score']]
+results_df = results_df[results_df['score'] > 88]
+
+## Combine dataframes for suggested edits
+results_df = results_df.rename(columns = {'name':'suggested'})
+suggested_names_cos = suggested_names_cos.rename(columns = {'match': 'suggested'})
+df_suggested = pd.concat([results_df[['query','suggested','code','iso']], suggested_names_cos])
+final_unmatched = list(set(unmatched) - set(df_suggested['query']))
+print(final_unmatched)
+######### OUTPUT #################
+df_suggested.to_csv('suggested_schedulec.csv', index = False)
+exact_matches.to_csv('country_schedulec.csv', index = False)
+with pd.ExcelWriter('visa_country_codes.xlsx') as file:
+    ScheduleC.to_excel(file, sheet_name = 'ScheduleC', index = False)
+    exact_matches.to_excel(file, sheet_name = 'exact', index = False)
+    df_suggested.to_excel(file, sheet_name = 'suggest', index = False)
+    countries.to_excel(file, sheet_name = 'countries', index = False)
