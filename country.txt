@@ -210,7 +210,7 @@ Code     |    Name                                                | ISO Code
 7643     |    Cabo Verde                                          | CV
 7644     |    Sao Tome and Principe                               | ST
 7650     |    Liberia                                             | LR
-7660     |    Congo, Democratic Republic of the Congo (formerly Za|rCD
+7660     |    Congo, Democratic Republic of the Congo (Zaire)     |rCD
 7670     |    Burundi                                             | BI
 7690     |    Rwanda                                              | RW
 7700     |    Somalia                                             | SO
