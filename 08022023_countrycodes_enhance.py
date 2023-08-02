@@ -39,6 +39,8 @@ codes_value = codes['code'][codes['name'].str.contains('\(')].tolist()
 iso_value = codes['iso'][codes['name'].str.contains('\(')].tolist()
 
 #### Dataframe ####
+# As an alternative, the above lists can also be zip into a dictionary. 
+# I choose to use dataframe because there're two possible values: iso and four-digit numeric code
 df1 = pd.DataFrame(data = {
     'code': codes_value,
     'name': main_names,
@@ -49,11 +51,19 @@ df2 = pd.DataFrame(data = {
     'iso': iso_value})
 # discretionary removal for not-so-useful info
 df2 = df2[df2['name'] != 'IN THE INDIAN OCEAN']
+
+#### Append certain rows based on political/historical facts ####
+df3 = pd.DataFrame(data = {
+    'code':['5660','5660','7950','4120','4120','2774','6820','5700','5700','9999'],
+    'name':['MACAO S.A.R','MACAU','SWAZILAND','GREAT BRITAIN','NORTHERN IRELAND','SAINT MARTIN','MICRONESIA','CHINA-MAINLAND',"PRC",'WESTERN SAHARA'],
+    'iso': ['MO','MO','SZ','GB','GB','SX','FM','CN','CN','UNKNOWN']})
+
 # concatenate all dataframes
-ScheduleC = pd.concat([codes,df1,df2]).\
+ScheduleC = pd.concat([codes,df1,df2,df3]).\
     sort_values(['code','name','iso'], ascending = True).\
         drop_duplicates().reset_index(drop = True)
 ScheduleC = ScheduleC[~ScheduleC['name'].str.contains('\(')]
+
 del alt_names,main_names,codes_value,iso_value,df1,df2
 #### OUTPUT ####
 ScheduleC.to_csv('schedulec.csv', index = False)
