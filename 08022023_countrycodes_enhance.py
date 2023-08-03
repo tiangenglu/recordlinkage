@@ -63,7 +63,7 @@ ScheduleC = pd.concat([codes,df1,df2,df3]).\
     sort_values(['code','name','iso'], ascending = True).\
         drop_duplicates().reset_index(drop = True)
 ScheduleC = ScheduleC[~ScheduleC['name'].str.contains('\(')]
-
+(ScheduleC['name'])[ScheduleC['name'] == 'COCOS  ISLANDS'] = 'COCOS ISLANDS'
 del alt_names,main_names,codes_value,iso_value,df1,df2
 #### OUTPUT ####
 ScheduleC.to_csv('schedulec.csv', index = False)
