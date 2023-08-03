@@ -7,10 +7,14 @@ Created on Mon Jul 31 23:26:31 2023
 
 1. Count unique country/region names
 2. Assign ISO country codes via (a) exact matches, (b) sklearn.pairwise, and (c) thefuzz
+3. Concatenate all suggested country names and then output results
+4. Map the suggested country names and codes to the full visa data
 
 Thoughts after the first draft:
     (1) Which characteristics of the dictionary/reference dataset can improve matching results?
+        The dictionary/reference dataset should be comprehensive/inclusive so that name variations can find their matches.
     (2) How do the characteristics differ in different approaches (tokenized words vs spelling variations)?
+        Tokenized words have more matches. `thefuzz` is good at picking up typos.
 """
 import pandas as pd
 import numpy as np
@@ -21,10 +25,12 @@ with open('08022023_countrycodes_enhance.py') as script:
 
 ##### STEP 1: HOW MANY COUNTRIES/REGIONS?
 countries = pd.read_csv('countries.csv')
+print("There're", str(len(countries)), "countries/regions.")
 
 ###### STEP 2 ######
 ### 2(a) Exact Matches ###
-exact_matches = countries.merge(ScheduleC, left_on = 'country', right_on = 'name', how = 'inner').drop('name',axis = 1)
+exact_matches = countries.merge(ScheduleC, left_on = 'country', right_on = 'name', how = 'inner')
+exact_matches = exact_matches[['country','name','code','iso']]    
 print(exact_matches.shape[0] / countries.shape[0])
 
 ## Then, create a short dataframe with unmatched countries
@@ -118,10 +124,9 @@ df_unused_ScheduleC = ScheduleC[ScheduleC['name'].isin(unused_ScheduleC)]
 
 ### 2(c) thefuzz
 from thefuzz import process
-print(unmatched)
+print("The following are the unmatched:\n",str(len(unmatched)),'\n',unmatched)
 
 fuzz_results = [None]*len(unmatched)
-print(fuzz_results)
 results_dfs = [None]*len(unmatched)
 for i in range(len(unmatched)):
     fuzz_results[i] = process.extract(unmatched[i], pd.Series(ScheduleC['name']), limit = 4)
@@ -139,12 +144,65 @@ results_df = results_df.rename(columns = {'name':'suggested'})
 suggested_names_cos = suggested_names_cos.rename(columns = {'match': 'suggested'})
 df_suggested = pd.concat([results_df[['query','suggested','code','iso']], suggested_names_cos])
 final_unmatched = list(set(unmatched) - set(df_suggested['query']))
-print(final_unmatched)
+print("The following are the unmatched after thefuzz:\n",str(len(final_unmatched)),'\n',final_unmatched)
+
+### concatenate the exact matches and recordlinkage results
+print("The exact match dataframe has the following columns:\n", exact_matches.columns)
+exact_matches_copy = exact_matches.copy(deep = True)
+exact_matches_copy = exact_matches_copy.rename(columns = {'country':'query', 'name':'suggested'})
+print("The exact_matches_copy has the following columns:\n", exact_matches_copy.columns)
+print("Do the exact_matches_copy and df_suggested have identical columns?\n",exact_matches_copy.columns == df_suggested.columns)
+countries_match = pd.concat([exact_matches_copy, df_suggested]).reset_index(drop = True)
 ######### OUTPUT #################
 df_suggested.to_csv('suggested_schedulec.csv', index = False)
-exact_matches.to_csv('country_schedulec.csv', index = False)
+exact_matches_copy.to_csv('country_schedulec.csv', index = False)
+###### Use the following `country_dictionary_c.csv` to map the input visa data #####
+countries_match.to_csv('country_dictionary_c.csv', index = False)
 with pd.ExcelWriter('visa_country_codes.xlsx') as file:
     ScheduleC.to_excel(file, sheet_name = 'ScheduleC', index = False)
-    exact_matches.to_excel(file, sheet_name = 'exact', index = False)
+    exact_matches_copy.to_excel(file, sheet_name = 'exact', index = False)
     df_suggested.to_excel(file, sheet_name = 'suggest', index = False)
-    countries.to_excel(file, sheet_name = 'countries', index = False)
+    countries_match.to_excel(file, sheet_name = 'dictionary', index = False)
+    
+######################## MAP TO FULL VISA DATA ##################################  
+if 'visa_alltime' in globals():
+    print("visa_alltime was previously imported.")
+else:
+    print("Import visa_alltime.csv now.")
+    visa_alltime = pd.read_csv('visa_alltime.csv')
+print("The visas_alltime data:\n", str(visa_alltime.shape), '\n', visa_alltime.columns)        
+print(\
+      "How many unique country/region names in visa_alltime?\n",\
+          str(len(set(visa_alltime['nationality'])))\
+              )
+### create dictionaries from countries_match data
+name_dict = dict(
+    zip(
+        countries_match['query'], countries_match['suggested']
+        ))
+code_dict = dict(
+    zip(countries_match['query'], countries_match['code']
+        ))
+print("Create a copy of visa_alltime. The copy is named as visa_edited.")
+visa_edited = visa_alltime.copy(deep = True)
+
+# assign a standard label from Schedule C codes
+visa_edited['label'] = visa_edited['nationality'].map(name_dict)
+
+print("How many rows in visa_edited cannot be mapped with a label?\n",\
+      str(len((visa_edited['nationality'])[visa_edited['label'].isnull()]))
+)
+print(set((visa_edited['nationality'])[visa_edited['label'].isnull()]))
+visa_edited[['label']] = visa_edited[['label']].fillna(value = 'OTHER')
+
+# assgin the 4-digit code
+visa_edited['code'] = visa_edited['nationality'].map(code_dict)
+visa_edited[['code']] = visa_edited[['code']].fillna(value = '9999')
+
+print('How many visas can not be assigned to a specific country/region?')
+total_counts = visa_edited.pivot_table(index = 'type', values = 'count', aggfunc = 'sum')
+unassigned_counts = (visa_edited[visa_edited['code'] == '9999']).pivot_table(index = 'type', values = 'count', aggfunc = 'sum')
+print(unassigned_counts / total_counts)
+
+################### OUTPUT LABELED VISA DATA ########################
+visa_edited.to_csv('visa_edited.csv', index = False)    
